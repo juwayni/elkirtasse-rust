@@ -1,0 +1,28 @@
+[package]
+name = "elkirtasse-tauri"
+version = "0.1.0"
+description = "Modernized Elkirtasse (Maktaba Shamela clone)"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "elkirtasse_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+quick-xml = { version = "0.36", features = ["serialize"] }
+tantivy = "0.22"
+jetdb = "0.1"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+log = "0.4"
+env_logger = "0.11"
+regex = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
