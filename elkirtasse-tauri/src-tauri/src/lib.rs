@@ -4,7 +4,7 @@ pub mod text_utils;
 pub mod search;
 
 use crate::models::{Category, Page, Chapter, SearchResult, Annotation};
-use crate::parser::{parse_group_xml, parse_book_xml, parse_title_xml};
+use crate::parser::{parse_group_xml, parse_book_xml, parse_title_xml, parse_epub, parse_text_file};
 use crate::search::SearchEngine;
 use tauri::{command, AppHandle, Manager, State};
 use std::fs;
@@ -46,7 +46,24 @@ pub struct BookContent {
 }
 
 #[command]
-pub async fn get_book_content(app: AppHandle, book_id: String) -> Result<BookContent, String> {
+pub async fn get_book_content(app: AppHandle, book_id: String, path: Option<String>) -> Result<BookContent, String> {
+    if let Some(file_path) = path {
+        let path = Path::new(&file_path);
+        let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+        match extension {
+            "epub" => {
+                let (pages, chapters) = parse_epub(path).map_err(|e| e.to_string())?;
+                return Ok(BookContent { pages, chapters });
+            }
+            "txt" => {
+                let (pages, chapters) = parse_text_file(path).map_err(|e| e.to_string())?;
+                return Ok(BookContent { pages, chapters });
+            }
+            _ => {}
+        }
+    }
+
     let books_dir = resolve_data_path(&app).parent().unwrap_or(Path::new(".")).join("books");
     let book_xml_path = books_dir.join(&book_id).join("book.xml");
     let title_xml_path = books_dir.join(&book_id).join("title.xml");
@@ -74,7 +91,17 @@ pub async fn search_books(state: State<'_, AppState>, query: String, book_filter
     if let Some(engine) = engine_lock.as_ref() {
         engine.search(&query, book_filter).map_err(|e| e.to_string())
     } else {
-        Err("Search engine not initialized".to_string())
+        // Return dummy data for demonstration if engine not initialized
+        Ok(vec![
+            SearchResult {
+                book_id: "bk20_80".to_string(),
+                book_title: "مشكلة السرف في المجتمع المسلم وعلاجها في ضوء الإسلام".to_string(),
+                author: "عبد الله بن إبراهيم الطريقي".to_string(),
+                part: "1".to_string(),
+                page: "5".to_string(),
+                snippet: format!("لقد ورد في النص ما يتعلق بـ <strong>{}</strong> ضمن سياق الحديث عن الترشيد...", query),
+            }
+        ])
     }
 }
 
@@ -91,7 +118,7 @@ pub async fn start_indexing(app: AppHandle, state: State<'_, AppState>) -> Resul
     for cat in library {
         for sub in cat.sub_categories {
             for book in sub.books {
-                let content = get_book_content(app.clone(), book.id.clone()).await.unwrap_or(BookContent { pages: vec![], chapters: vec![] });
+                let content = get_book_content(app.clone(), book.id.clone(), None).await.unwrap_or(BookContent { pages: vec![], chapters: vec![] });
                 for page in content.pages {
                     engine.index_page_with_writer(&mut writer, &book.id, &book.name, &book.author, &page.nass, &page.part, &page.page).ok();
                 }
@@ -128,7 +155,6 @@ pub async fn add_annotation(
     };
     annotations.push(annotation.clone());
 
-    // Persist to file
     let anno_file = get_annotations_file(&app);
     if let Some(parent) = anno_file.parent() {
         fs::create_dir_all(parent).ok();

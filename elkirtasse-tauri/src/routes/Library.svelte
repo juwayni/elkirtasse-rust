@@ -122,7 +122,12 @@
                 <span class="text-xs font-bold text-gray-400 uppercase tracking-widest">PDF / EPUB</span>
                 <button
                   class="bg-gray-900 dark:bg-white text-white dark:text-gray-900 px-6 py-2.5 rounded-xl text-sm font-black transition-all hover:bg-blue-600 hover:text-white group-hover:shadow-lg"
-                  on:click={() => window.location.hash = `#/reader/${book.id}`}
+                  on:click={() => {
+                    const recent = JSON.parse(localStorage.getItem('recentBooks') || '[]');
+                    const filtered = recent.filter(b => b.id !== book.id);
+                    localStorage.setItem('recentBooks', JSON.stringify([book, ...filtered].slice(0, 4)));
+                    window.location.hash = `#/reader/${book.id}`;
+                  }}
                 >
                   READ →
                 </button>

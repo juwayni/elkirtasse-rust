@@ -87,16 +87,33 @@ impl SearchEngine {
         for (_score, doc_address) in top_docs {
             let retrieved_doc: tantivy::TantivyDocument = searcher.doc(doc_address)?;
 
+            let content = retrieved_doc.get_first(content_field).and_then(|v| v.as_str()).unwrap_or("");
+            // Basic snippet with search terms bolded
+            let snippet = self.generate_highlighted_snippet(content, query_str);
+
             results.push(SearchResult {
                 book_id: retrieved_doc.get_first(self.schema.get_field("book_id").unwrap()).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 book_title: retrieved_doc.get_first(self.schema.get_field("title").unwrap()).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 author: retrieved_doc.get_first(self.schema.get_field("author").unwrap()).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 part: retrieved_doc.get_first(self.schema.get_field("part").unwrap()).and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 page: retrieved_doc.get_first(self.schema.get_field("page").unwrap()).and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                snippet: retrieved_doc.get_first(content_field).and_then(|v| v.as_str()).unwrap_or("").chars().take(250).collect(),
+                snippet,
             });
         }
 
         Ok(results)
+    }
+
+    fn generate_highlighted_snippet(&self, content: &str, query: &str) -> String {
+        let terms: Vec<&str> = query.split_whitespace().collect();
+        let mut snippet: String = content.chars().take(300).collect();
+        for term in terms {
+            let re = regex::RegexBuilder::new(term)
+                .case_insensitive(true)
+                .build()
+                .unwrap();
+            snippet = re.replace_all(&snippet, "<strong>$0</strong>").to_string();
+        }
+        snippet
     }
 }

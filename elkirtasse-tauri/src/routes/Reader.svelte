@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
+  import { fade } from 'svelte/transition';
 
   export let bookId: string;
 
@@ -33,17 +34,56 @@
   let showToc = true;
   let selection: { text: string, range: Range } | null = null;
 
+  // Reader Settings
+  let fontSize = 20;
+  let lineHeight = 1.8;
+  let fontFamily = 'Amiri';
+  let showSettings = false;
+
+  // Search Context
+  let highlightTerm = "";
+
   async function loadBook() {
     isLoading = true;
     try {
+      // Get highlight term from URL if present
+      const urlParams = new URLSearchParams(window.location.hash.split('?')[1]);
+      highlightTerm = urlParams.get('q') || "";
+      const targetPage = urlParams.get('page');
+
       const data: { pages: Page[], chapters: Chapter[] } = await invoke("get_book_content", { bookId });
       pages = data.pages;
       chapters = data.chapters;
       annotations = await invoke("get_annotations", { bookId });
+
+      if (targetPage) {
+        const index = pages.findIndex(p => p.page === targetPage);
+        if (index !== -1) currentPageIndex = index;
+      }
     } catch (e) {
       console.error("Failed to load book", e);
     } finally {
       isLoading = false;
+    }
+  }
+
+  function applyHighlight(html: string) {
+    if (!highlightTerm) return html;
+    const re = new RegExp(highlightTerm, 'gi');
+    return html.replace(re, '<mark class="bg-yellow-200 dark:bg-yellow-900/50 rounded px-1">$0</mark>');
+  }
+
+  function saveSettings() {
+    localStorage.setItem('readerSettings', JSON.stringify({ fontSize, lineHeight, fontFamily }));
+  }
+
+  function loadSettings() {
+    const saved = localStorage.getItem('readerSettings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      fontSize = parsed.fontSize || 20;
+      lineHeight = parsed.lineHeight || 1.8;
+      fontFamily = parsed.fontFamily || 'Amiri';
     }
   }
 
@@ -76,32 +116,33 @@
     }
   }
 
-  function nextPage() {
-    if (currentPageIndex < pages.length - 1) currentPageIndex++;
+  async function copySelection() {
+    if (selection) {
+       await navigator.clipboard.writeText(selection.text);
+       selection = null;
+       window.getSelection()?.removeAllRanges();
+    }
   }
 
-  function prevPage() {
-    if (currentPageIndex > 0) currentPageIndex--;
-  }
-
-  function goToChapter(chapterId: string) {
-    const index = pages.findIndex(p => p.id === chapterId);
-    if (index !== -1) currentPageIndex = index;
-  }
-
-  onMount(loadBook);
+  onMount(() => {
+    loadBook();
+    loadSettings();
+  });
 </script>
 
 <div class="flex h-full bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100" on:mouseup={handleSelection}>
   {#if showToc}
-    <aside class="w-64 border-r border-gray-200 dark:border-gray-700 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+    <aside class="w-64 border-r border-gray-200 dark:border-gray-800 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
       <h2 class="text-lg font-bold mb-4">Contents</h2>
       <ul>
         {#each chapters as chapter}
           <li class="mb-1" style="margin-left: {(chapter.level - 1) * 12}px">
             <button
               class="text-left w-full p-1 text-sm hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-              on:click={() => goToChapter(chapter.id)}
+              on:click={() => {
+                 const index = pages.findIndex(p => p.id === chapter.id);
+                 if (index !== -1) currentPageIndex = index;
+              }}
             >
               {chapter.title}
             </button>
@@ -125,30 +166,66 @@
         <span class="text-sm font-medium">Page {pages[currentPageIndex]?.page || '-'} | Part {pages[currentPageIndex]?.part || '-'}</span>
       </div>
 
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-4">
         {#if selection}
-          <div class="flex gap-1 mr-4 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-            <button on:click={() => addHighlight('yellow')} class="w-6 h-6 rounded-full bg-yellow-300 border border-gray-300"></button>
-            <button on:click={() => addHighlight('green')} class="w-6 h-6 rounded-full bg-green-300 border border-gray-300"></button>
-            <button on:click={() => addHighlight('blue')} class="w-6 h-6 rounded-full bg-blue-300 border border-gray-300"></button>
+          <div class="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg mr-2" transition:fade>
+            <button on:click={() => addHighlight('yellow')} class="w-7 h-7 rounded-lg bg-yellow-300 border border-gray-300 shadow-sm"></button>
+            <button on:click={() => addHighlight('green')} class="w-7 h-7 rounded-lg bg-green-300 border border-gray-300 shadow-sm"></button>
+            <button on:click={copySelection} class="px-3 py-1 text-xs font-bold uppercase tracking-wider hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors">Copy</button>
           </div>
         {/if}
+
         <button
-          class="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-          on:click={prevPage}
-          disabled={currentPageIndex === 0}
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+          on:click={() => showSettings = !showSettings}
         >
-          Previous
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
         </button>
-        <button
-          class="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
-          on:click={nextPage}
-          disabled={currentPageIndex === pages.length - 1}
-        >
-          Next
-        </button>
+
+        <div class="flex items-center gap-2 border-l pl-4 dark:border-gray-800">
+            <button
+              class="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+              on:click={() => { if (currentPageIndex > 0) currentPageIndex--; }}
+              disabled={currentPageIndex === 0}
+            >
+              Prev
+            </button>
+            <button
+              class="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+              on:click={() => { if (currentPageIndex < pages.length - 1) currentPageIndex++; }}
+              disabled={currentPageIndex === pages.length - 1}
+            >
+              Next
+            </button>
+        </div>
       </div>
     </header>
+
+    {#if showSettings}
+      <div class="absolute top-16 right-4 w-72 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl p-6 z-20" transition:fade>
+        <h3 class="font-bold mb-4 text-xs uppercase tracking-widest text-gray-400">Typography Settings</h3>
+        <div class="space-y-6">
+          <div>
+            <label class="text-sm font-medium mb-2 block">Font Family</label>
+            <select bind:value={fontFamily} on:change={saveSettings} class="w-full p-2 rounded-lg bg-gray-100 dark:bg-gray-800 border-none outline-none">
+              <option value="Amiri">Amiri (Traditional)</option>
+              <option value="Scheherazade New">Scheherazade (Naskh)</option>
+              <option value="system-ui">System Default</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-sm font-medium mb-2 block">Font Size ({fontSize}px)</label>
+            <input type="range" min="12" max="48" bind:value={fontSize} on:input={saveSettings} class="w-full">
+          </div>
+          <div>
+            <label class="text-sm font-medium mb-2 block">Line Height ({lineHeight})</label>
+            <input type="range" min="1" max="3" step="0.1" bind:value={lineHeight} on:input={saveSettings} class="w-full">
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <div class="flex-1 overflow-y-auto p-8 md:p-12 lg:p-16 max-w-4xl mx-auto w-full">
       {#if isLoading}
@@ -156,20 +233,20 @@
           <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
       {:else if pages.length > 0}
-        <article class="prose prose-lg dark:prose-invert max-w-none font-serif text-right leading-loose" dir="rtl">
-          {@html pages[currentPageIndex].nass}
+        <article
+          class="prose prose-lg dark:prose-invert max-w-none text-right leading-loose transition-all duration-300"
+          dir="rtl"
+          style="font-family: '{fontFamily}', serif; font-size: {fontSize}px; line-height: {lineHeight}"
+        >
+          {@html applyHighlight(pages[currentPageIndex].nass)}
         </article>
 
-        {#if annotations.filter(a => a.page_id === pages[currentPageIndex].id).length > 0}
-          <div class="mt-12 border-t border-gray-200 pt-6">
-            <h3 class="text-sm font-bold uppercase tracking-wider text-gray-500 mb-4">Highlights & Notes</h3>
-            {#each annotations.filter(a => a.page_id === pages[currentPageIndex].id) as anno}
-              <div class="mb-4 p-3 rounded bg-{anno.color}-50 border-l-4 border-{anno.color}-400 text-sm italic">
-                "{anno.text}"
-              </div>
-            {/each}
+        {#each annotations.filter(a => a.page_id === pages[currentPageIndex].id) as anno}
+          <div class="mt-8 mb-4 p-4 rounded-xl bg-gray-50 dark:bg-gray-900 border-l-4 border-blue-500 shadow-sm transition-all hover:shadow-md">
+            <p class="text-sm font-medium text-gray-500 mb-2 uppercase tracking-tighter">Highlight</p>
+            <p class="text-lg italic text-right font-serif" dir="rtl">"{anno.text}"</p>
           </div>
-        {/if}
+        {/each}
       {:else}
         <p class="text-center text-gray-500 mt-20">Book content not found.</p>
       {/if}
@@ -178,14 +255,7 @@
 </div>
 
 <style>
-  article {
-    font-family: 'Amiri', 'Traditional Arabic', serif;
-    font-size: 1.35rem;
+  :global(.prose) {
+    max-width: none !important;
   }
-  .bg-yellow-50 { background-color: #fefce8; }
-  .border-yellow-400 { border-color: #facc15; }
-  .bg-green-50 { background-color: #f0fdf4; }
-  .border-green-400 { border-color: #4ade80; }
-  .bg-blue-50 { background-color: #eff6ff; }
-  .border-blue-400 { border-color: #60a5fa; }
 </style>
