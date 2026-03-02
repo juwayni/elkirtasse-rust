@@ -8,6 +8,7 @@ pub struct Book {
     pub author: String,
     pub betaka: String,
     pub path: Option<String>,
+    pub progress: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,4 +58,18 @@ pub struct Annotation {
     pub color: String,
     pub note: Option<String>,
     pub timestamp: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserBookData {
+    pub book_id: String,
+    pub last_read_page: String,
+    pub last_read_index: usize,
+    pub bookmarks: Vec<String>, // list of page IDs
+    pub progress: f64, // 0.0 to 1.0
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct UserData {
+    pub books: Vec<UserBookData>,
 }

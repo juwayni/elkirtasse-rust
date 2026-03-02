@@ -26,10 +26,18 @@
     note: string | null;
   }
 
+  interface UserBookData {
+    last_read_page: string;
+    last_read_index: number;
+    progress: number;
+    bookmarks: string[];
+  }
+
   let currentPageIndex = 0;
   let pages: Page[] = [];
   let chapters: Chapter[] = [];
   let annotations: Annotation[] = [];
+  let bookmarks: string[] = [];
   let isLoading = true;
   let showToc = true;
   let selection: { text: string, range: Range } | null = null;
@@ -59,6 +67,12 @@
       if (targetPage) {
         const index = pages.findIndex(p => p.page === targetPage);
         if (index !== -1) currentPageIndex = index;
+      } else {
+        const userData = await invoke<UserBookData | null>("get_user_book_data", { bookId });
+        if (userData) {
+            currentPageIndex = userData.last_read_index;
+            bookmarks = userData.bookmarks || [];
+        }
       }
     } catch (e) {
       console.error("Failed to load book", e);
@@ -124,13 +138,46 @@
     }
   }
 
+  async function toggleBookmark() {
+    const pageId = pages[currentPageIndex].id;
+    try {
+        const isBookmarked = await invoke("toggle_bookmark", { bookId, pageId });
+        if (isBookmarked) {
+            bookmarks = [...bookmarks, pageId];
+        } else {
+            bookmarks = bookmarks.filter(id => id !== pageId);
+        }
+    } catch (e) {
+        console.error("Failed to toggle bookmark", e);
+    }
+  }
+
+  async function updateProgress() {
+    if (pages.length === 0) return;
+    const progress = currentPageIndex / (pages.length - 1);
+    try {
+        await invoke("save_user_book_data", {
+            bookId,
+            lastReadPage: pages[currentPageIndex].page,
+            lastReadIndex: currentPageIndex,
+            progress
+        });
+    } catch (e) {
+        console.error("Failed to save progress", e);
+    }
+  }
+
+  $: if (currentPageIndex !== undefined) {
+    updateProgress();
+  }
+
   onMount(() => {
     loadBook();
     loadSettings();
   });
 </script>
 
-<div class="flex h-full bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100" on:mouseup={handleSelection}>
+<div role="none" class="flex h-full bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100" on:mouseup={handleSelection}>
   {#if showToc}
     <aside class="w-64 border-r border-gray-200 dark:border-gray-800 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
       <h2 class="text-lg font-bold mb-4">Contents</h2>
@@ -158,26 +205,47 @@
         <button
           class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
           on:click={() => showToc = !showToc}
+          aria-label="Toggle Table of Contents"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
         <span class="text-sm font-medium">Page {pages[currentPageIndex]?.page || '-'} | Part {pages[currentPageIndex]?.part || '-'}</span>
+        <button
+          class="p-2 rounded-full transition-colors {bookmarks.includes(pages[currentPageIndex]?.id) ? 'text-red-500 hover:bg-red-50' : 'text-gray-400 hover:bg-gray-100'}"
+          on:click={toggleBookmark}
+          title="Toggle Bookmark"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill={bookmarks.includes(pages[currentPageIndex]?.id) ? "currentColor" : "none"} viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+        </button>
       </div>
 
       <div class="flex items-center gap-4">
         {#if selection}
           <div class="flex gap-1 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg mr-2" transition:fade>
-            <button on:click={() => addHighlight('yellow')} class="w-7 h-7 rounded-lg bg-yellow-300 border border-gray-300 shadow-sm"></button>
-            <button on:click={() => addHighlight('green')} class="w-7 h-7 rounded-lg bg-green-300 border border-gray-300 shadow-sm"></button>
+            <button on:click={() => addHighlight('yellow')} class="w-7 h-7 rounded-lg bg-yellow-300 border border-gray-300 shadow-sm" aria-label="Highlight Yellow"></button>
+            <button on:click={() => addHighlight('green')} class="w-7 h-7 rounded-lg bg-green-300 border border-gray-300 shadow-sm" aria-label="Highlight Green"></button>
             <button on:click={copySelection} class="px-3 py-1 text-xs font-bold uppercase tracking-wider hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors">Copy</button>
           </div>
         {/if}
 
         <button
           class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
+          on:click={() => window.print()}
+          title="Print this page"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+        </button>
+
+        <button
+          class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded transition-colors"
           on:click={() => showSettings = !showSettings}
+          aria-label="Reader Settings"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -208,20 +276,20 @@
         <h3 class="font-bold mb-4 text-xs uppercase tracking-widest text-gray-400">Typography Settings</h3>
         <div class="space-y-6">
           <div>
-            <label class="text-sm font-medium mb-2 block">Font Family</label>
-            <select bind:value={fontFamily} on:change={saveSettings} class="w-full p-2 rounded-lg bg-gray-100 dark:bg-gray-800 border-none outline-none">
+            <label for="font-family" class="text-sm font-medium mb-2 block">Font Family</label>
+            <select id="font-family" bind:value={fontFamily} on:change={saveSettings} class="w-full p-2 rounded-lg bg-gray-100 dark:bg-gray-800 border-none outline-none">
               <option value="Amiri">Amiri (Traditional)</option>
               <option value="Scheherazade New">Scheherazade (Naskh)</option>
               <option value="system-ui">System Default</option>
             </select>
           </div>
           <div>
-            <label class="text-sm font-medium mb-2 block">Font Size ({fontSize}px)</label>
-            <input type="range" min="12" max="48" bind:value={fontSize} on:input={saveSettings} class="w-full">
+            <label for="font-size" class="text-sm font-medium mb-2 block">Font Size ({fontSize}px)</label>
+            <input id="font-size" type="range" min="12" max="48" bind:value={fontSize} on:input={saveSettings} class="w-full">
           </div>
           <div>
-            <label class="text-sm font-medium mb-2 block">Line Height ({lineHeight})</label>
-            <input type="range" min="1" max="3" step="0.1" bind:value={lineHeight} on:input={saveSettings} class="w-full">
+            <label for="line-height" class="text-sm font-medium mb-2 block">Line Height ({lineHeight})</label>
+            <input id="line-height" type="range" min="1" max="3" step="0.1" bind:value={lineHeight} on:input={saveSettings} class="w-full">
           </div>
         </div>
       </div>

@@ -107,8 +107,12 @@ impl SearchEngine {
     fn generate_highlighted_snippet(&self, content: &str, query: &str) -> String {
         let terms: Vec<&str> = query.split_whitespace().collect();
         let mut snippet: String = content.chars().take(300).collect();
+
+        // Sanitize snippet before highlighting to prevent XSS
+        snippet = ammonia::clean(&snippet);
+
         for term in terms {
-            let re = regex::RegexBuilder::new(term)
+            let re = regex::RegexBuilder::new(&regex::escape(term))
                 .case_insensitive(true)
                 .build()
                 .unwrap();

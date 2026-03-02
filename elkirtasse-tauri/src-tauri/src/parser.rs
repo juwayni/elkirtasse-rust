@@ -1,47 +1,71 @@
 use crate::models::{Book, Category, Chapter, Page};
 use quick_xml::de::from_str;
+use quick_xml::se::to_string;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use std::path::Path;
 use std::fs;
 use epub::doc::EpubDoc;
 
-#[derive(Debug, Deserialize)]
-struct GroupXml {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GroupXml {
     #[serde(rename = "root")]
-    roots: Vec<RootCategory>,
+    pub roots: Vec<RootCategory>,
 }
 
-#[derive(Debug, Deserialize)]
-struct RootCategory {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RootCategory {
     #[serde(rename = "@Name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@id")]
-    id: String,
+    pub id: String,
     #[serde(rename = "Item", default)]
-    items: Vec<SubCategoryXml>,
+    pub items: Vec<SubCategoryXml>,
 }
 
-#[derive(Debug, Deserialize)]
-struct SubCategoryXml {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SubCategoryXml {
     #[serde(rename = "@Name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@id")]
-    id: String,
+    pub id: String,
     #[serde(rename = "bk", default)]
-    books: Vec<BookXml>,
+    pub books: Vec<BookXml>,
 }
 
-#[derive(Debug, Deserialize)]
-struct BookXml {
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct BookXml {
     #[serde(rename = "@id")]
-    id: String,
+    pub id: String,
     #[serde(rename = "@name")]
-    name: String,
+    pub name: String,
     #[serde(rename = "@aut")]
-    author: String,
+    pub author: String,
     #[serde(rename = "@betaka")]
-    betaka: String,
+    pub betaka: String,
+}
+
+pub fn add_book_to_group_xml(xml_content: &str, category_id: &str, book: BookXml) -> Result<String> {
+    let mut group: GroupXml = from_str(xml_content)?;
+    let mut found = false;
+    for root in &mut group.roots {
+        for sub in &mut root.items {
+            if sub.id == category_id {
+                sub.books.push(book.clone());
+                found = true;
+                break;
+            }
+        }
+        if found { break; }
+    }
+
+    // If category not found, add to the first subcategory of the first root
+    if !found && !group.roots.is_empty() && !group.roots[0].items.is_empty() {
+        group.roots[0].items[0].books.push(book);
+    }
+
+    let new_xml = to_string(&group)?;
+    Ok(new_xml)
 }
 
 pub fn parse_group_xml(xml_content: &str) -> Result<Vec<Category>> {
@@ -60,6 +84,7 @@ pub fn parse_group_xml(xml_content: &str) -> Result<Vec<Category>> {
                 author: b.author,
                 betaka: b.betaka,
                 path: None,
+                progress: None,
             }).collect(),
         }).collect(),
         books: vec![],

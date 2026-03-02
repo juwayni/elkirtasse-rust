@@ -1,6 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
 
+  export let onOpenBook: (bookId: string, title: string, page?: string) => void;
+
   interface SearchResult {
     book_id: string;
     book_title: string;
@@ -88,8 +90,15 @@
             <div class="absolute top-0 left-0 w-1 h-full bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
             <div class="flex justify-between items-start mb-6">
-              <div>
-                <h3 class="text-2xl font-black text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 transition-colors cursor-pointer" on:click={() => window.location.hash = `#/reader/${result.book_id}?page=${result.page}`}>{result.book_title}</h3>
+              <div class="flex-1">
+                <button
+                  class="text-left w-full mb-2"
+                  on:click={() => onOpenBook(result.book_id, result.book_title, result.page)}
+                >
+                   <h3 class="text-2xl font-black text-gray-900 dark:text-white group-hover:text-blue-600 transition-colors cursor-pointer">
+                    {result.book_title}
+                   </h3>
+                </button>
                 <p class="text-base text-blue-600 dark:text-blue-400 font-medium">{result.author}</p>
               </div>
               <div class="flex flex-col items-end gap-1">
@@ -113,7 +122,7 @@
               </button>
               <button
                 class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-600 hover:text-white transition-all text-sm border border-gray-100 dark:border-gray-700 shadow-sm"
-                on:click={() => window.location.hash = `#/reader/${result.book_id}?page=${result.page}`}
+                on:click={() => onOpenBook(result.book_id, result.book_title, result.page)}
               >
                 OPEN BOOK →
               </button>
